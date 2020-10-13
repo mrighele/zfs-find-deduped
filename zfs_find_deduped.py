@@ -7,12 +7,21 @@ def extract_pool(filesystem):
     return filesystem.split('/')[0]
 
 
+INDIRECT_BLOCKS=0
+OTHER=1
+
+DEBUG=False
+if "--debug" in sys.argv:
+    DEBUG=True
+    sys.argv.remove("--debug")
 
 filesystem = sys.argv[1]
 pool = extract_pool(filesystem)
 
-INDIRECT_BLOCKS=0
-OTHER=1
+
+def debug(*args):
+    if DEBUG:
+        print(*args)
 
 
 def find_file_indirect_blocks(filesystem):
@@ -25,15 +34,18 @@ def find_file_indirect_blocks(filesystem):
     for line in output.split(b'\n'):
         tokens = line.strip().split()
         if len(tokens) > 0 and tokens[0] == b"path":
-            current_path = tokens[1]
+            current_path = line[ line.index(b"path") + 4:].strip()
             blocks[current_path] = []
+            debug("Processing file", current_path)
         elif len(tokens) == 2 and tokens[0] ==b"Indirect":
+            debug("Found indirect blocks")
             status = INDIRECT_BLOCKS
         elif len(tokens) == 0:
             status = OTHER
         elif status == INDIRECT_BLOCKS and current_path is not None:
             block_name = tokens[2].decode("utf-8")
             blocks[current_path].append(block_name)
+            debug("Found block", block_name)
     return blocks
 
 def find_dedup_blocks(pool):
@@ -54,7 +66,6 @@ file_blocks = find_file_indirect_blocks(filesystem)
 
 print("Scanning pool", pool,"to gather dedup block list...")
 dedups = find_dedup_blocks(pool)
-
 result = {}
 print("List of files with dedup indexes:")
 count = 0
