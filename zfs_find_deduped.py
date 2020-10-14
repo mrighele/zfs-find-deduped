@@ -25,52 +25,56 @@ def debug(*args):
 
 
 def find_file_indirect_blocks(filesystem):
-    process = subprocess.run(["/sbin/zdb", "-ddddd", filesystem], stdout=subprocess.PIPE);
-    output=process.stdout
+    with subprocess.Popen(["/sbin/zdb", "-ddddd", filesystem], stdout=subprocess.PIPE) as process:
+        blocks = []
+        current_path = None
+        status=OTHER
 
-    blocks = {}
-    current_path = None
-    status=OTHER
-    for line in output.split(b'\n'):
-        tokens = line.strip().split()
-        if len(tokens) > 0 and tokens[0] == b"path":
-            current_path = line[ line.index(b"path") + 4:].strip()
-            blocks[current_path] = []
-            debug("Processing file", current_path)
-        elif len(tokens) == 2 and tokens[0] ==b"Indirect":
-            debug("Found indirect blocks")
-            status = INDIRECT_BLOCKS
-        elif len(tokens) == 0:
-            status = OTHER
-        elif status == INDIRECT_BLOCKS and current_path is not None:
-            block_name = tokens[2].decode("utf-8")
-            blocks[current_path].append(block_name)
-            debug("Found block", block_name)
-    return blocks
+        for line in process.stdout.readlines():
+            tokens = line.strip().split()
+            if len(tokens) > 0 and tokens[0] == b"path":
+                current_path = line[ line.index(b"path") + 4:].strip()
+                blocks = []
+                debug("Processing file", current_path)
+            elif len(tokens) == 2 and tokens[0] ==b"Indirect":
+                debug("Found indirect blocks")
+                status = INDIRECT_BLOCKS
+            elif len(tokens) == 0:
+                status = OTHER
+                if current_path != None:
+                    debug("yielding ", current_path, blocks)
+                    yield (current_path, blocks)
+                    current_path = None
+                    blocks = []
+            elif status == INDIRECT_BLOCKS and current_path is not None:
+                block_name = tokens[2].decode("utf-8")
+                blocks.append(block_name)
+                debug("Found block", block_name)
+
 
 def find_dedup_blocks(pool):
-    process = subprocess.run(["/sbin/zdb", "-DDDDD", pool], stdout=subprocess.PIPE, universal_newlines=True);
-    output=process.stdout
-    blocks = {}
-    
-    for line in output.split('\n'):
-        tokens = line.strip().split()
-        if len(tokens) > 0 and tokens[0] == "index":
-            refcount = int(tokens[3])
-            block = tokens[5][8:-1]
-            blocks[block] = refcount
-    return blocks
+    with subprocess.Popen(["/sbin/zdb", "-DDDDD", pool], stdout=subprocess.PIPE, universal_newlines=True) as process:
+        blocks = {}
+        for line in process.stdout.readlines():
+            tokens = line.strip().split()
+            if len(tokens) > 0 and tokens[0] == "index":
+                refcount = int(tokens[3])
+                block = tokens[5][8:-1]
+                blocks[block] = refcount
+        return blocks
+
+print("Scanning pool", pool,"to gather dedup block list...")
+dedups = find_dedup_blocks(pool)
 
 print("Scanning filesystem", filesystem,"to gather file and block list...")
 file_blocks = find_file_indirect_blocks(filesystem)
 
-print("Scanning pool", pool,"to gather dedup block list...")
-dedups = find_dedup_blocks(pool)
+
 result = {}
 print("List of files with dedup indexes:")
 count = 0
-for path in file_blocks.keys():
-    for block in file_blocks[path]:
+for (path, blocks) in file_blocks:
+    for block in blocks:
         if dedups.get(block):
             if not path in result:
                 result[path] = [0,0]

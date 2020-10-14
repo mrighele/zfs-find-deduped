@@ -28,10 +28,17 @@ of blocks that are being shared with other files.
 In particular files with a 0 in the second position don't share any block with other files and are
 taking space in the DDT for no gain.
 
+### Command line arguments
+
+Beside the pool to test, the tool accept the following optional argument
+
+* --debug will cause the program to print some debugging information while running
+
+
 ### Notes
 
-The tools is memory intensive since it needs to load all the information in memory before processing it.
-In my tests 1/2 GB of ram (depending on the usage pattern) are required for every TB of data
+I expect the tool to use a fair amount of memory. In particular the map to count the occurrences of the
+blocks is kept in memory. I would be happy to receive some feedback on this.  
 
 Since the tool runs the _zdb_ command which need superuser rights you will probably need to run it
 either as root or with sudo.
